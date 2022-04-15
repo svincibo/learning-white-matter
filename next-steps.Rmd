@@ -164,3 +164,72 @@ If you want to do group lasso (or sparse gl), I see 4 options
 1. For each tract, use a basis expansion. The groups are the tracts.
 
 I think 1 and 3 won't work well. I'd suggest 2 or 4.
+
+## Let's try No. 4
+
+This doesn't work well for some reason. CV wants the null model while AIC wants the saturated model. 
+
+```{r make-splines}
+df = 8
+fa_wide_spline <- fa_sub %>%
+  filter(nodeID > 20, nodeID < 181) %>%
+  group_by(subID, tractname) %>%
+  group_modify( ~ {
+    if (sum(!is.na(.x$fa)) < df + 2)
+      return(data.frame(nms = 1:df, cc = NA))
+    out = lm(fa ~ splines::bs(nodeID, df=df, intercept = TRUE) - 1, data = .x)
+    data.frame(nms = 1:df, cc = coef(out))
+  })
+fa_wide_spline <- fa_wide_spline %>%
+  pivot_wider(names_from = c(tractname, nms), values_from = cc)
+```
+
+```{r sparsegl}
+library(sparsegl)
+x <- fa_wide_spline %>% 
+  ungroup() %>% 
+  select(-subID) %>% 
+  as.matrix()
+gr <- rle(str_extract(colnames(x), "^[^_]*"))$lengths
+gr <- rep(1:length(gr), times = gr)
+y <- as.matrix(all_resp %>% select(-subID))
+set.seed(12345)
+asparse = .25
+fitter_sgl <- function(y) {
+  yy <- y[bad_obs < 4]
+  mod <- sparsegl(x, yy / sd(yy), group = gr, lambda.factor = 1e-4, asparse = asparse)
+  aic <- estimate_risk(mod, x, type = "AIC")$AIC
+  print(spot <- which.min(aic))
+  cc <- coef(mod, s = mod$lambda[spot])
+  data.frame(t(as.matrix(cc)))
+}
+
+bad_obs <- rowSums(is.na(x))
+bad_cols <- colSums(is.na(x[bad_obs < 4,]))
+x <- x[bad_obs < 4,]
+
+
+model_sgl <- lapply(all_resp %>% select(-subID), fitter_sgl) %>%
+  bind_rows() %>%
+  mutate(resp = colnames(y)) %>%
+  pivot_longer(-resp) %>%
+  filter(abs(value) > 0) %>%
+  mutate(region = str_extract(name, "^[^_]*")) %>%
+  group_by(resp, region) %>%
+  summarise(norm = (1-asparse) * sqrt(sum(value^2)) + 
+              asparse * sum(abs(value)))
+```
+
+Here we plot the norms of the groups (always positive).
+
+```{r sparsegl-plot}
+model_sgl %>%
+  ggplot(aes(norm, region, color = resp)) +
+  geom_point() + 
+  theme_bw() +
+  geom_vline(xintercept = 0) +
+  scale_color_brewer(palette = "Set1") +
+  ylab("")
+
+```
+
