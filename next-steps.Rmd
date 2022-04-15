@@ -11,6 +11,15 @@ output:
 knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 ```
 
+```{r, eval=FALSE, echo=TRUE}
+# Required packages
+install.packages("tidyverse")
+install.packages("glmnet")
+install.packages("lme4")
+install.packages("remotes")
+remotes::install_github("dajmcdon/sparsegl")
+```
+
 ```{r data-loading} 
 library(glmnet)
 library(tidyverse)
@@ -80,6 +89,7 @@ fits <- wr %>%
 all_resp <- full_join(recog_resp, fits) %>%
   select(subID, rt, acc, Estimate) %>%
   rename(learn = Estimate) %>%
+  mutate(learn = -learn) %>%
   filter()
 ```
 

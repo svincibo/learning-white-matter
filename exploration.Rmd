@@ -9,6 +9,17 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 ```
 
+```{r, eval=FALSE, echo=TRUE}
+# Required packages
+install.packages("tidyverse")
+install.packages("lme4")
+install.packages("glmnet")
+install.packages("remotes")
+remotes::install_github("dajmcdon/sparsegl")
+```
+
+
+
 ```{r data-loading} 
 
 library(tidyverse)
