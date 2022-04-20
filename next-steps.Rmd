@@ -195,6 +195,45 @@ cis %>%
   scale_color_brewer(palette = "Dark2")
 ```
 
+### Same thing, but just using lm on the selected groups
+
+```{r lm-cis}
+ci_select_lm <- function(y) {
+  yy <- y[bad_obs < 4]
+  mod <- glmnet(xstd, yy, relax = TRUE, gamma = 0, standardize = FALSE)
+  aic <- log(colMeans((yy - predict(mod, newx = xstd))^2)) +
+    2 * mod$df / n 
+  lam <- mod$lambda[which.min(aic)]
+  cc <- coef(mod, s = lam)[-1]
+  res <- fixedLassoInf(xstd, yy , cc, lam*n)
+  mod2 <- lm(yy ~ x[,res$vars])
+  conf <- confint(mod2, level = .9)
+  tibble(var = names(res$vars),
+         est = coef(mod2)[-1] ,
+         cilow = conf[-1,1],
+         cihi = conf[-1,2])
+}
+
+lm_cis <- map_dfr(
+  as_tibble(y[,2:3]), ci_select_lm, .id = "response")
+```
+
+```{r lm-ci-plot}
+lm_cis %>%
+  ggplot(aes(est, var, color = var)) +
+  geom_point() +
+  geom_errorbar(aes(xmin=cilow, xmax = cihi)) +
+  facet_wrap(~response, scales = "free", 
+             labeller = labeller(response = better_labels)) +
+  theme_bw() +
+  labs(x = "Coefficient estimate", y="") +
+  geom_vline(xintercept = 0) +
+  theme(legend.position = "none") +
+  scale_color_brewer(palette = "Dark2")
+```
+
+
+
 
 ## Fit 2: just do lm on everything
 
