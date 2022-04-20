@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 install.packages("tidyverse")
 install.packages("glmnet")
 install.packages("lme4")
+install.packages("selectiveInference")
 install.packages("remotes")
 remotes::install_github("dajmcdon/sparsegl")
 ```
@@ -145,10 +146,61 @@ ggplot(mean_model_lasso, aes(value, name, color = resp)) +
   ylab("")
 ```
 
+### Confidence intervals for this fit.
+
+Note that the coefficients are on the scale of the data now, but the design matrix has to be standardized. We invert it
+
+```{r glmnet-cis}
+library(selectiveInference)
+n <- nrow(y)
+p <- ncol(x)
+xm <- colMeans(x)
+xstd <- x - rep(xm, rep(n, p))
+xs <- drop(rep(1/n, n) %*% xstd^2)^0.5
+xstd <- xstd / rep(xs, rep(n, p))
+
+ci_glmnet <- function(y) {
+  yy <- y[bad_obs < 4]
+  mod <- glmnet(xstd, yy, relax = TRUE, gamma = 0, standardize = FALSE)
+  aic <- log(colMeans((yy - predict(mod, newx = xstd))^2)) +
+    2 * mod$df / n 
+  lam <- mod$lambda[which.min(aic)]
+  cc <- coef(mod, s = lam)[-1]
+  res <- fixedLassoInf(xstd, yy , cc, lam*n)
+  tibble(var = names(res$vars),
+         est = res$coef0 / xs[res$vars],
+         cilow = res$ci[,1] / xs[res$vars],
+         cihi = res$ci[,2] / xs[res$vars])
+
+}
+
+cis <- map_dfr(
+  as_tibble(y[,2:3]), ci_glmnet, .id = "response")
+```
+
+Now we plot them
+
+```{r ci-plot}
+better_labels = c(acc = "Accuracy", learn = "Learning")
+cis %>%
+  ggplot(aes(est, var, color = var)) +
+  geom_point() +
+  geom_errorbar(aes(xmin=cilow, xmax = cihi)) +
+  facet_wrap(~response, scales = "free", 
+             labeller = labeller(response = better_labels)) +
+  theme_bw() +
+  labs(x = "Coefficient estimate", y="") +
+  geom_vline(xintercept = 0) +
+  theme(legend.position = "none") +
+  scale_color_brewer(palette = "Dark2")
+```
+
+
 ## Fit 2: just do lm on everything
 
 ```{r try-lm}
-df <- inner_join(all_resp, fa_wide_means) %>% select(-subID) %>%
+df <- inner_join(all_resp, fa_wide_means) %>% 
+  dplyr::select(-subID) %>%
   mutate(across(c("rt", "acc", "learn"), ~.x/sd(.x)))
 out <- lm(cbind(rt, acc, learn) ~ . , data = df)
 coef(out) %>% 
@@ -198,11 +250,11 @@ fa_wide_spline <- fa_wide_spline %>%
 library(sparsegl)
 x <- fa_wide_spline %>% 
   ungroup() %>% 
-  select(-subID) %>% 
+  dplyr::select(-subID) %>% 
   as.matrix()
 gr <- rle(str_extract(colnames(x), "^[^_]*"))$lengths
 gr <- rep(1:length(gr), times = gr)
-y <- as.matrix(all_resp %>% select(-subID))
+y <- as.matrix(all_resp %>% dplyr::select(-subID))
 set.seed(12345)
 asparse = .25
 fitter_sgl <- function(y) {
@@ -219,7 +271,7 @@ bad_cols <- colSums(is.na(x[bad_obs < 4,]))
 x <- x[bad_obs < 4,]
 
 
-model_sgl <- lapply(all_resp %>% select(-subID), fitter_sgl) %>%
+model_sgl <- lapply(all_resp %>% dplyr::select(-subID), fitter_sgl) %>%
   bind_rows() %>%
   mutate(resp = colnames(y)) %>%
   pivot_longer(-resp) %>%
