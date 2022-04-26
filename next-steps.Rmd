@@ -24,9 +24,9 @@ remotes::install_github("dajmcdon/sparsegl")
 ```{r data-loading} 
 library(glmnet)
 library(tidyverse)
-recog <- read_csv("wml_data_beh_recog_n39_20220314.csv")
-wr <- read_csv("wml_data_beh_write_n39_20220314.csv")
-tracts <- read_csv("wml_data_mri_tractprofiles_n39_20220314.csv")
+recog <- read_csv("wml_data_beh_recog_n56_20220425.csv")
+wr <- read_csv("wml_data_beh_write_n56_20220425.csv")
+tracts <- read_csv("wml_data_mri_tractprofiles_n51_20220425.csv")
 
 # use fractional anisotropy
 fa <- tracts %>% select(subID, tractname, nodeID, fa)
@@ -66,7 +66,7 @@ recog_resp <- recog %>%
 ```{r, fig.show='hold', out.width="45%"}
 plot(density(recog_resp$acc))
 plot(recog_resp$acc, recog_resp$rt)
-bad_outlier <- recog_resp$subID[which.min(recog_resp$acc)]
+bad_outlier <- recog_resp$subID[recog_resp$acc <= .50]
 ```
 
 No transformation is needed. Log wouldn't help. Logit doesn't do much. 
@@ -74,11 +74,31 @@ No transformation is needed. Log wouldn't help. Logit doesn't do much.
 Subject ID `r bad_outlier` should be removed.
 
 ```{r kill-outlier}
-fa_sub <- fa_sub %>% filter(subID != bad_outlier)
-fa_wide <- fa_wide %>% filter(subID != bad_outlier)
-fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier)
-recog_resp <- recog_resp %>% filter(subID != bad_outlier)
-wr <- wr %>% filter(subID != bad_outlier)
+fa_sub <- fa_sub %>% filter(subID != bad_outlier[1])
+fa_sub <- fa_sub %>% filter(subID != bad_outlier[2])
+fa_sub <- fa_sub %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+fa_sub <- fa_sub %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+fa_wide <- fa_wide %>% filter(subID != bad_outlier[1])
+fa_wide <- fa_wide %>% filter(subID != bad_outlier[2])
+fa_wide <- fa_wide %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+fa_wide <- fa_wide %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[1])
+fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[2])
+fa_wide_means <- fa_wide_means %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+fa_wide_means <- fa_wide_means %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+recog_resp <- recog_resp %>% filter(subID != bad_outlier[1])
+recog_resp <- recog_resp %>% filter(subID != bad_outlier[2])
+recog_resp <- recog_resp %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+recog_resp <- recog_resp %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+wr <- wr %>% filter(subID != bad_outlier[1])
+wr <- wr %>% filter(subID != bad_outlier[2])
+wr <- wr %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+wr <- wr %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
 # grab the slopes
 fits <- wr %>%
   group_by(subID) %>%
