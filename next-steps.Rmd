@@ -29,7 +29,8 @@ wr <- read_csv("wml_data_beh_write_n56_20220425.csv")
 tracts <- read_csv("wml_data_mri_tractprofiles_n51_20220425.csv")
 
 # use fractional anisotropy
-fa <- tracts %>% select(subID, tractname, nodeID, fa)
+fa <- tracts %>% 
+  select(subID, tractname, nodeID, fa)
 fa_sub <- fa %>%
   filter(
     str_detect(tractname, "SLF") |
@@ -181,6 +182,7 @@ xstd <- xstd / rep(xs, rep(n, p))
 
 ci_glmnet <- function(y) {
   yy <- y[bad_obs < 4]
+  yy <- yy/sd(yy)
   mod <- glmnet(xstd, yy, relax = TRUE, gamma = 0, standardize = FALSE)
   aic <- log(colMeans((yy - predict(mod, newx = xstd))^2)) +
     2 * mod$df / n 
@@ -201,7 +203,7 @@ cis <- map_dfr(
 Now we plot them
 
 ```{r ci-plot}
-better_labels = c(acc = "Accuracy", learn = "Learning")
+better_labels = c(acc = "Recognition Accuracy", learn = "Drawing Duration")
 cis %>%
   ggplot(aes(est, var, color = var)) +
   geom_point() +
