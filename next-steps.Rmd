@@ -24,12 +24,12 @@ remotes::install_github("dajmcdon/sparsegl")
 ```{r data-loading} 
 library(glmnet)
 library(tidyverse)
-recog <- read_csv("wml_data_beh_recog_n39_20220314.csv")
-wr <- read_csv("wml_data_beh_write_n39_20220314.csv")
-tracts <- read_csv("wml_data_mri_tractprofiles_n39_20220314.csv")
+recog <- read_csv("wml_data_beh_recog_n56_20220425.csv")
+wr <- read_csv("wml_data_beh_write_n56_20220425.csv")
+tracts <- read_csv("wml_data_mri_tractprofiles_n51_20220425.csv")
 
 # use fractional anisotropy
-fa <- tracts %>% select(subID, tractname, nodeID, fa)
+fa <- tracts %>% dplyr::select(subID, tractname, nodeID, fa)
 fa_sub <- fa %>%
   filter(
     str_detect(tractname, "SLF") |
@@ -52,7 +52,7 @@ fa_wide_means <- fa_sub %>%
   pivot_wider(names_from = tractname, values_from = fa)
 fa_wide <- fa_sub %>%
   filter(nodeID > 20, nodeID < 181) %>%
-  select(-gr) %>%
+  dplyr::select(-gr) %>%
   pivot_wider(names_from = c(tractname, nodeID), values_from = fa)
 
 recog_resp <- recog %>%
@@ -66,7 +66,7 @@ recog_resp <- recog %>%
 ```{r, fig.show='hold', out.width="45%"}
 plot(density(recog_resp$acc))
 plot(recog_resp$acc, recog_resp$rt)
-bad_outlier <- recog_resp$subID[which.min(recog_resp$acc)]
+bad_outlier <- recog_resp$subID[recog_resp$acc <= .50]
 ```
 
 No transformation is needed. Log wouldn't help. Logit doesn't do much. 
@@ -74,11 +74,31 @@ No transformation is needed. Log wouldn't help. Logit doesn't do much.
 Subject ID `r bad_outlier` should be removed.
 
 ```{r kill-outlier}
-fa_sub <- fa_sub %>% filter(subID != bad_outlier)
-fa_wide <- fa_wide %>% filter(subID != bad_outlier)
-fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier)
-recog_resp <- recog_resp %>% filter(subID != bad_outlier)
-wr <- wr %>% filter(subID != bad_outlier)
+fa_sub <- fa_sub %>% filter(subID != bad_outlier[1])
+fa_sub <- fa_sub %>% filter(subID != bad_outlier[2])
+fa_sub <- fa_sub %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+fa_sub <- fa_sub %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+fa_wide <- fa_wide %>% filter(subID != bad_outlier[1])
+fa_wide <- fa_wide %>% filter(subID != bad_outlier[2])
+fa_wide <- fa_wide %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+fa_wide <- fa_wide %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[1])
+fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[2])
+fa_wide_means <- fa_wide_means %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+fa_wide_means <- fa_wide_means %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+recog_resp <- recog_resp %>% filter(subID != bad_outlier[1])
+recog_resp <- recog_resp %>% filter(subID != bad_outlier[2])
+recog_resp <- recog_resp %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+recog_resp <- recog_resp %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
+wr <- wr %>% filter(subID != bad_outlier[1])
+wr <- wr %>% filter(subID != bad_outlier[2])
+wr <- wr %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
+wr <- wr %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
+
 # grab the slopes
 fits <- wr %>%
   group_by(subID) %>%
@@ -88,7 +108,7 @@ fits <- wr %>%
     )$coefficients[2,,drop=FALSE])
   })
 all_resp <- full_join(recog_resp, fits) %>%
-  select(subID, rt, acc, Estimate) %>%
+  dplyr::select(subID, rt, acc, Estimate) %>%
   rename(learn = Estimate) %>%
   mutate(learn = -learn) %>%
   filter()
@@ -105,7 +125,7 @@ See above figure. Seemingly no. `rt` is pretty constant (at least btw subjects).
 # Fit 1: relaxed lasso on means for selected tracks (no grouping)
 
 ```{r}
-y <- as.matrix(all_resp %>% select(-subID))
+y <- as.matrix(all_resp %>% dplyr::select(-subID))
 x <- fa_wide_means %>% 
   ungroup() %>% 
   dplyr::select(-subID) %>% 
@@ -132,7 +152,7 @@ fitter_glmnet <- function(y) {
   data.frame(t(as.matrix(cc)))
 }
 
-mean_model_lasso <- lapply(all_resp %>% select(-subID), fitter_glmnet) %>%
+mean_model_lasso <- lapply(all_resp %>% dplyr::select(-subID), fitter_glmnet) %>%
   bind_rows() %>%
   mutate(resp = colnames(y)) %>%
   pivot_longer(-resp) %>%
@@ -161,6 +181,7 @@ xstd <- xstd / rep(xs, rep(n, p))
 
 ci_glmnet <- function(y) {
   yy <- y[bad_obs < 4]
+  yy <- yy/sd(yy)
   mod <- glmnet(xstd, yy, relax = TRUE, gamma = 0, standardize = FALSE)
   aic <- log(colMeans((yy - predict(mod, newx = xstd))^2)) +
     2 * mod$df / n 
@@ -168,9 +189,9 @@ ci_glmnet <- function(y) {
   cc <- coef(mod, s = lam)[-1]
   res <- fixedLassoInf(xstd, yy , cc, lam*n)
   tibble(var = names(res$vars),
-         est = res$coef0 / xs[res$vars],
-         cilow = res$ci[,1] / xs[res$vars],
-         cihi = res$ci[,2] / xs[res$vars])
+         est = res$coef0,
+         cilow = res$ci[,1],
+         cihi = res$ci[,2])
 
 }
 
@@ -181,7 +202,7 @@ cis <- map_dfr(
 Now we plot them
 
 ```{r ci-plot}
-better_labels = c(acc = "Accuracy", learn = "Learning")
+better_labels = c(acc = "Recognition Accuracy", learn = "Drawing Duration")
 cis %>%
   ggplot(aes(est, var, color = var)) +
   geom_point() +
