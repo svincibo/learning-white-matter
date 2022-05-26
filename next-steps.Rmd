@@ -213,7 +213,7 @@ cis %>%
   labs(x = "Coefficient estimate", y="") +
   geom_vline(xintercept = 0) +
   theme(legend.position = "none") +
-  scale_color_brewer(palette = "Dark2")
+  scale_color_viridis_d()
 ```
 
 ### Same thing, but just using lm on the selected groups
@@ -250,7 +250,7 @@ lm_cis %>%
   labs(x = "Coefficient estimate", y="") +
   geom_vline(xintercept = 0) +
   theme(legend.position = "none") +
-  scale_color_brewer(palette = "Dark2")
+  scale_color_viridis_d()
 ```
 
 
@@ -270,7 +270,7 @@ coef(out) %>%
   geom_point() + 
   theme_bw() +
   geom_vline(xintercept = 0) +
-  scale_color_brewer(palette = "Set1") +
+  scale_color_viridis_d() +
   ylab("")
 ```
 
