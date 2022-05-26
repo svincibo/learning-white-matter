@@ -108,7 +108,7 @@ See above figure. Seemingly no. `rt` is pretty constant (at least btw subjects).
 y <- as.matrix(all_resp %>% select(-subID))
 x <- fa_wide_means %>% 
   ungroup() %>% 
-  select(-subID) %>% 
+  dplyr::select(-subID) %>% 
   as.matrix()
 bad_obs <- rowSums(is.na(x))
 bad_cols <- colSums(is.na(x[bad_obs < 4,]))
