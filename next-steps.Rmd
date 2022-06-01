@@ -192,11 +192,14 @@ ci_glmnet <- function(y) {
          est = res$coef0,
          cilow = res$ci[,1],
          cihi = res$ci[,2])
-
+         bestaic = min(aic)
+ 
 }
 
 cis <- map_dfr(
   as_tibble(y[,2:3]), ci_glmnet, .id = "response")
+
+
 ```
 
 Now we plot them
