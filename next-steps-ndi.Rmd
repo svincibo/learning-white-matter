@@ -24,12 +24,12 @@ remotes::install_github("dajmcdon/sparsegl")
 ```{r data-loading} 
 library(glmnet)
 library(tidyverse)
-recog <- read_csv("wml_data_beh_recog_n60_20220607.csv")
-wr <- read_csv("wml_data_beh_write_n60_20220607.csv")
-tracts <- read_csv("wml_data_mri_tractprofiles_n60_run1_20220609.csv")
+recog <- read_csv("wml_data_beh_recog_n56_20220601.csv")
+wr <- read_csv("wml_data_beh_write_n56_20220601.csv")
+tracts <- read_csv("wml_data_mri_tractprofiles_n51_run1_20220425.csv")
 
 # use fractional anisotropy
-fa <- tracts %>% dplyr::select(subID, tractname, nodeID, fa)
+fa <- tracts %>% dplyr::select(subID, tractname, nodeID, ndi)
 fa_sub <- fa %>%
   filter(
     str_detect(tractname, "SLF") |
@@ -48,12 +48,12 @@ rm(tracts, fa)
 fa_wide_means <- fa_sub %>%
   filter(nodeID > 20, nodeID < 181) %>%
   group_by(subID, tractname) %>%
-  summarise(fa = mean(fa, na.rm = TRUE)) %>%
-  pivot_wider(names_from = tractname, values_from = fa)
+  summarise(ndi = mean(ndi, na.rm = TRUE)) %>%
+  pivot_wider(names_from = tractname, values_from = ndi)
 fa_wide <- fa_sub %>%
   filter(nodeID > 20, nodeID < 181) %>%
   dplyr::select(-gr) %>%
-  pivot_wider(names_from = c(tractname, nodeID), values_from = fa)
+  pivot_wider(names_from = c(tractname, nodeID), values_from = ndi)
 
 recog_resp <- recog %>%
   group_by(subID) %>%
@@ -77,32 +77,27 @@ Subject ID `r bad_outlier` should be removed.
 fa_sub <- fa_sub %>% filter(subID != bad_outlier[1])
 fa_sub <- fa_sub %>% filter(subID != bad_outlier[2])
 fa_sub <- fa_sub %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-fa_sub <- fa_sub %>% filter(subID != 60) # brain anomaly
-#fa_sub <- fa_sub %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+fa_sub <- fa_sub %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
 
 fa_wide <- fa_wide %>% filter(subID != bad_outlier[1])
 fa_wide <- fa_wide %>% filter(subID != bad_outlier[2])
 fa_wide <- fa_wide %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-fa_wide <- fa_wide %>% filter(subID != 60) # brain anomaly
-#fa_wide <- fa_wide %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+fa_wide <- fa_wide %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
 
 fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[1])
 fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[2])
 fa_wide_means <- fa_wide_means %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-fa_wide_means <- fa_wide_means %>% filter(subID != 60) # brain anomaly
-#fa_wide_means <- fa_wide_means %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+fa_wide_means <- fa_wide_means %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
 
 recog_resp <- recog_resp %>% filter(subID != bad_outlier[1])
 recog_resp <- recog_resp %>% filter(subID != bad_outlier[2])
 recog_resp <- recog_resp %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-recog_resp <- recog_resp %>% filter(subID != 60) # brain anomaly
-#recog_resp <- recog_resp %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+recog_resp <- recog_resp %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
 
 wr <- wr %>% filter(subID != bad_outlier[1])
 wr <- wr %>% filter(subID != bad_outlier[2])
 wr <- wr %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-wr <- wr %>% filter(subID != 60) # brain anomaly
-#wr <- wr %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+wr <- wr %>% filter(subID != 90, subID != 91, subID != 92, subID != 94, subID != 96) # still processing on brainlife
 
 # grab the slopes
 fits <- wr %>%
@@ -198,31 +193,11 @@ ci_glmnet <- function(y) {
          cilow = res$ci[,1],
          cihi = res$ci[,2],
          bestaic = min(aic))
- 
 }
 
 cis <- map_dfr(
   as_tibble(y[,2:3]), ci_glmnet, .id = "response")
 
-yy <- y[,"learn"][bad_obs < 4]
-mod <- glmnet(x, yy, relax = TRUE, gamma = 0)
-aic_learn <- log(colMeans((yy - predict(mod, newx = x))^2)) +
-    2 * mod$df / length(yy) 
-predsdraw <- predict(mod, newx = x, s = mod$lambda[which.min(aic_learn)])
-
-yy <- y[,"acc"][bad_obs < 4]
-mod <- glmnet(x, yy, relax = TRUE, gamma = 0)
-aic_acc <- log(colMeans((yy - predict(mod, newx = x))^2)) +
-    2 * mod$df / length(yy) 
-predsacc <- predict(mod, newx = x, s = mod$lambda[which.min(aic_acc)])
-
-# sqrt(mean(actual - predicted)^2))
-mse1 = mean((y[,"acc"] - predsacc)^2)
-mse2 = mean((y[,"acc"] - predsdraw)^2)
-out = mse2/mse1
-
-plot(y[,"acc"], predsacc, col = "red")
-plot(y[,"acc"], predsdraw, col = "blue")
 
 ```
 
@@ -381,7 +356,4 @@ model_sgl %>%
   ylab("")
 
 ```
-write.csv(all_resp,"/Volumes/Seagate/wml/wml-wmpredictslearning-djm/learning-white-matter/allResp.csv", row.names = TRUE)
-write.csv(fa_wide_means,"/Volumes/Seagate/wml/wml-wmpredictslearning-djm/learning-white-matter/fa.csv", row.names = TRUE)
-write.csv(cis,"/Volumes/Seagate/wml/wml-wmpredictslearning-djm/learning-white-matter/lassofit_fa_predicts_acc.csv", row.names = TRUE)
 
