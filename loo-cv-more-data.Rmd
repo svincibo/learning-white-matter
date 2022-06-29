@@ -1,7 +1,7 @@
 ---
-title: "next-steps"
+title: "LOO CV, More data"
 author: "DJM"
-date: "15/04/2022"
+date: "29/06/2022"
 output: 
   html_document:
     number_sections: true
@@ -16,7 +16,6 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 install.packages("tidyverse")
 install.packages("glmnet")
 install.packages("lme4")
-install.packages("selectiveInference")
 install.packages("remotes")
 remotes::install_github("dajmcdon/sparsegl")
 ```
@@ -61,48 +60,26 @@ recog_resp <- recog %>%
             acc = mean(acc == 1, na.rm=TRUE))
 ```
 
-# Should we log transform `acc`? Are there outliers?
+# Are there outliers?
 
 ```{r, fig.show='hold', out.width="45%"}
-plot(density(recog_resp$acc))
 plot(recog_resp$acc, recog_resp$rt)
 bad_outlier <- recog_resp$subID[recog_resp$acc <= .50]
 ```
 
-No transformation is needed. Log wouldn't help. Logit doesn't do much. 
-
-Subject ID `r bad_outlier` should be removed.
+Subject IDs `r bad_outlier` should be removed.
 
 ```{r kill-outlier}
-fa_sub <- fa_sub %>% filter(subID != bad_outlier[1])
-fa_sub <- fa_sub %>% filter(subID != bad_outlier[2])
-fa_sub <- fa_sub %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-fa_sub <- fa_sub %>% filter(subID != 60) # brain anomaly
-#fa_sub <- fa_sub %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+missing_tracts <- c(25, 31, 32, 42)
+brain_anomaly <- c(60)
+remove_ids <- c(bad_outlier, missing_tracts, brain_anomaly)
 
-fa_wide <- fa_wide %>% filter(subID != bad_outlier[1])
-fa_wide <- fa_wide %>% filter(subID != bad_outlier[2])
-fa_wide <- fa_wide %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-fa_wide <- fa_wide %>% filter(subID != 60) # brain anomaly
-#fa_wide <- fa_wide %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
 
-fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[1])
-fa_wide_means <- fa_wide_means %>% filter(subID != bad_outlier[2])
-fa_wide_means <- fa_wide_means %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-fa_wide_means <- fa_wide_means %>% filter(subID != 60) # brain anomaly
-#fa_wide_means <- fa_wide_means %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
-
-recog_resp <- recog_resp %>% filter(subID != bad_outlier[1])
-recog_resp <- recog_resp %>% filter(subID != bad_outlier[2])
-recog_resp <- recog_resp %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-recog_resp <- recog_resp %>% filter(subID != 60) # brain anomaly
-#recog_resp <- recog_resp %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
-
-wr <- wr %>% filter(subID != bad_outlier[1])
-wr <- wr %>% filter(subID != bad_outlier[2])
-wr <- wr %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
-wr <- wr %>% filter(subID != 60) # brain anomaly
-#wr <- wr %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
+fa_sub <- fa_sub %>% filter(! subID %in% remove_ids)
+fa_wide <- fa_wide %>% filter(! subID %in% remove_ids)
+fa_wide_means <- fa_wide_means %>% filter(! subID %in% remove_ids)
+recog_resp <- recog_resp %>% filter(! subID %in% remove_ids)
+wr <- wr %>% filter(! subID %in% remove_ids)
 
 # grab the slopes
 fits <- wr %>%
@@ -124,7 +101,7 @@ all_resp <- full_join(recog_resp, fits) %>%
 Yes. Due to cv. There are too few observations for 10 fold CV. We use leave one out.
 
 
-# Fit 1: relaxed lasso on means for selected tracks (no grouping)
+# Relaxed lasso on means for selected tracks (no grouping)
 
 ```{r}
 y <- as.matrix(all_resp %>% dplyr::select(-subID))
@@ -134,7 +111,6 @@ x <- fa_wide_means %>%
   as.matrix()
 ```
 
-## Our models
 
 ```{r, warning=FALSE}
 mod_acc <- cv.glmnet(x, y[,"acc"], relax = TRUE, gamma = 0, nfolds = nrow(x))
@@ -158,223 +134,65 @@ ggplot(mean_model_lasso, aes(value, var, color = name)) +
 
 ### Confidence intervals for this fit.
 
-Note that the coefficients are on the scale of the data now, but the design matrix has to be standardized. We invert it
+Because $n > p$, technically, the OLS intervals are valid. This is the simplest thing to do. So let's just use those.
+
 
 ```{r glmnet-cis}
-library(selectiveInference)
-n <- nrow(y)
-p <- ncol(x)
-xm <- colMeans(x)
-xstd <- x - rep(xm, rep(n, p))
-xs <- drop(rep(1/n, n) %*% xstd^2)^0.5
-xstd <- xstd / rep(xs, rep(n, p))
+lm_acc <- lm(acc ~. , bind_cols(acc = y[,"acc"], x))
+lm_learn <- lm(learn ~ ., bind_cols(learn = y[,"learn"] , x))
 
-ci_glmnet <- function(yy) {
-  ss <- sd(yy)
-  yy <- yy / ss
-  mod <- cv.glmnet(xstd, yy, standardize = FALSE,
-                   nfolds = n, thresh = 1e-12)
-  lam <- mod$lambda.min
-  cc <- coef(mod, s = lam, exact = TRUE)[-1]
-  if (sum(abs(cc) > 0) == 0) {
-    return(tibble(var = character(0), est = numeric(0), cilow = numeric(0),
-                  cihi = numeric(0), bestcv = numeric(0)))
-  }
-  res <- fixedLassoInf(xstd, yy , cc, lam*n, alpha = .05)
-  tibble(var = names(res$vars),
-         est = res$coef0[,1],
-         cilow = pmax(res$ci[,1], -40),
-         cihi = pmin(res$ci[,2], 40),
-         bestcv = min(mod$cvm),
-         lmout = coef(lm(yy ~ x[,names(res$vars)]))[-1] * ss)
-}
+mean_model_lasso <- left_join(
+  mean_model_lasso,
+  bind_rows(as_tibble(confint(lm_acc)) %>% 
+              mutate(name = "acc", var = names(coef(lm_acc))),
+            as_tibble(confint(lm_learn)) %>% 
+              mutate(name = "learn", var = names(coef(lm_learn))))
+  )
 
-
-cis <- map_dfr(
-  as_tibble(y[,2:3]), ci_glmnet, .id = "response")
-
-ggplot(cis, aes(y = var, color = response)) + geom_point(aes(x = est)) + geom_point(aes(x=lmout), shape = 17) + geom_linerange(aes(xmin = cilow, xmax = cihi)) + theme_bw()
-
-
-
-yy <- y[,"learn"][bad_obs < 4]
-mod <- glmnet(x, yy, relax = TRUE, gamma = 0)
-aic_learn <- log(colMeans((yy - predict(mod, newx = x))^2)) +
-    2 * mod$df / length(yy) 
-predsdraw <- predict(mod, newx = x, s = mod$lambda[which.min(aic_learn)])
-
-yy <- y[,"acc"][bad_obs < 4]
-mod <- glmnet(x, yy, relax = TRUE, gamma = 0)
-aic_acc <- log(colMeans((yy - predict(mod, newx = x))^2)) +
-    2 * mod$df / length(yy) 
-predsacc <- predict(mod, newx = x, s = mod$lambda[which.min(aic_acc)])
-
-# sqrt(mean(actual - predicted)^2))
-mse1 = mean((y[,"acc"] - predsacc)^2)
-mse2 = mean((y[,"acc"] - predsdraw)^2)
-out = mse2/mse1
-
-plot(y[,"acc"], predsacc, col = "red")
-plot(y[,"acc"], predsdraw, col = "blue")
-
-```
-
-Now we plot them
-
-```{r ci-plot}
 better_labels = c(acc = "Recognition Accuracy", learn = "Drawing Duration")
-cis %>%
-  ggplot(aes(est, var, color = var)) +
-  geom_point() +
-  geom_errorbar(aes(xmin=cilow, xmax = cihi)) +
-  facet_wrap(~response, scales = "free", 
-             labeller = labeller(response = better_labels)) +
+  
+ggplot(mean_model_lasso, aes(y=var, color = var)) +
+  geom_point(aes(x=value)) +
+  geom_errorbar(aes(xmin = `2.5 %`, xmax = `97.5 %`)) +
+  facet_wrap(~ name, scales = "free", labeller = labeller(name = better_labels)) +
   theme_bw() +
-  labs(x = "Coefficient estimate", y="") +
   geom_vline(xintercept = 0) +
   theme(legend.position = "none") +
-  scale_color_viridis_d()
+  scale_color_brewer(palette = "Dark2")
 ```
 
-### Same thing, but just using lm on the selected groups
 
-```{r lm-cis}
-ci_select_lm <- function(y) {
-  yy <- y[bad_obs < 4]
-  mod <- glmnet(xstd, yy, relax = TRUE, gamma = 0, standardize = FALSE)
-  aic <- log(colMeans((yy - predict(mod, newx = xstd))^2)) +
-    2 * mod$df / n 
-  lam <- mod$lambda[which.min(aic)]
-  cc <- coef(mod, s = lam)[-1]
-  res <- fixedLassoInf(xstd, yy , cc, lam*n)
-  mod2 <- lm(yy ~ x[,res$vars])
-  conf <- confint(mod2, level = .9)
-  tibble(var = names(res$vars),
-         est = coef(mod2)[-1] ,
-         cilow = conf[-1,1],
-         cihi = conf[-1,2])
-}
+## See how well the regions for drawing (learning) predict accuracy
 
-lm_cis <- map_dfr(
-  as_tibble(y[,2:3]), ci_select_lm, .id = "response")
+```{r}
+# predsdraw <- predict(mod_learn, newx = x, s = mod_learn$lambda.min)
+predsacc <- predict(mod_acc, newx = x, s = mod_acc$lambda.min)
+acc_model_with_draw_covariates <- 
+  lm(acc ~ ., bind_cols(
+    acc = y[,"acc"], 
+    x[, predict(mod_learn, s="lambda.min", type = "nonzero")$which,
+      drop=FALSE])) %>%
+  predict(newx = x)
+
+mse1 = mean((y[,"acc"] - predsacc)^2) # accuracy model for accuracy
+mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates)^2)
+
+perc_worse <- (mse2 / mse1 - 1) * 100 
 ```
 
-```{r lm-ci-plot}
-lm_cis %>%
-  ggplot(aes(est, var, color = var)) +
-  geom_point() +
-  geom_errorbar(aes(xmin=cilow, xmax = cihi)) +
-  facet_wrap(~response, scales = "free", 
-             labeller = labeller(response = better_labels)) +
+* I think the right way to do this is not to use _the estimated model_ from drawing to predict accuracy, but to use _the selected regions_ from the drawing model. Then we refit accuracy, using only those regions, but have new slope/intercepts. Otherwise, things are on the wrong scale. 
+
+Doing this, the predictions using the drawing regions are about `r round(perc_worse)`% worse.
+
+```{r plt-preds}
+bind_cols(accuracy = y[,"acc"], 
+          `drawing model` = acc_model_with_draw_covariates,
+          `accuracy model` = predsacc) %>%
+  pivot_longer(-accuracy, values_to = "predicted value") %>%
+  ggplot(aes(x = `predicted value`, y = accuracy)) + 
+  geom_point(aes(color = name, shape = name)) +
   theme_bw() +
-  labs(x = "Coefficient estimate", y="") +
-  geom_vline(xintercept = 0) +
-  theme(legend.position = "none") +
-  scale_color_viridis_d()
-```
-
-
-
-
-## Fit 2: just do lm on everything
-
-```{r try-lm}
-df <- inner_join(all_resp, fa_wide_means) %>% 
-  dplyr::select(-subID) %>%
-  mutate(across(c("rt", "acc", "learn"), ~.x/sd(.x)))
-out <- lm(cbind(rt, acc, learn) ~ . , data = df)
-coef(out) %>% 
-  as_tibble(rownames = "coef") %>%
-  pivot_longer(-coef) %>%
-  ggplot(aes(value, coef, color = name)) +
-  geom_point() + 
-  theme_bw() +
-  geom_vline(xintercept = 0) +
-  scale_color_viridis_d() +
-  ylab("")
-```
-
-# Group lasso
-
-I wouldn't bother with group lasso on the mean model. Just lasso (relaxed), or `lm`.
-
-If you want to do group lasso (or sparse gl), I see 4 options
-
-1. For each tract, use all nodes. The groups are PVP/Dorsal/Ventral
-1. For each tract, use all nodes. The groups are the tracts.
-1. For each tract, use a basis expansion (5-10 df). The groups are PVP/Dorsal/Ventral
-1. For each tract, use a basis expansion. The groups are the tracts.
-
-I think 1 and 3 won't work well. I'd suggest 2 or 4.
-
-## Let's try No. 4
-
-This doesn't work well for some reason. CV wants the null model while AIC wants the saturated model. 
-
-```{r make-splines}
-df = 8
-fa_wide_spline <- fa_sub %>%
-  filter(nodeID > 20, nodeID < 181) %>%
-  group_by(subID, tractname) %>%
-  group_modify( ~ {
-    if (sum(!is.na(.x$fa)) < df + 2)
-      return(data.frame(nms = 1:df, cc = NA))
-    out = lm(fa ~ splines::bs(nodeID, df=df, intercept = TRUE) - 1, data = .x)
-    data.frame(nms = 1:df, cc = coef(out))
-  })
-fa_wide_spline <- fa_wide_spline %>%
-  pivot_wider(names_from = c(tractname, nms), values_from = cc)
-```
-
-```{r sparsegl}
-library(sparsegl)
-x <- fa_wide_spline %>% 
-  ungroup() %>% 
-  dplyr::select(-subID) %>% 
-  as.matrix()
-gr <- rle(str_extract(colnames(x), "^[^_]*"))$lengths
-gr <- rep(1:length(gr), times = gr)
-y <- as.matrix(all_resp %>% dplyr::select(-subID))
-set.seed(12345)
-asparse = .25
-fitter_sgl <- function(y) {
-  yy <- y[bad_obs < 4]
-  mod <- sparsegl(x, yy / sd(yy), group = gr, lambda.factor = 1e-4, asparse = asparse)
-  aic <- estimate_risk(mod, x, type = "AIC")$AIC
-  print(spot <- which.min(aic))
-  cc <- coef(mod, s = mod$lambda[spot])
-  data.frame(t(as.matrix(cc)))
-}
-
-bad_obs <- rowSums(is.na(x))
-bad_cols <- colSums(is.na(x[bad_obs < 4,]))
-x <- x[bad_obs < 4,]
-
-
-model_sgl <- lapply(all_resp %>% dplyr::select(-subID), fitter_sgl) %>%
-  bind_rows() %>%
-  mutate(resp = colnames(y)) %>%
-  pivot_longer(-resp) %>%
-  filter(abs(value) > 0) %>%
-  mutate(region = str_extract(name, "^[^_]*")) %>%
-  group_by(resp, region) %>%
-  summarise(norm = (1-asparse) * sqrt(sum(value^2)) + 
-              asparse * sum(abs(value)))
-```
-
-Here we plot the norms of the groups (always positive).
-
-```{r sparsegl-plot}
-model_sgl %>%
-  ggplot(aes(norm, region, color = resp)) +
-  geom_point() + 
-  theme_bw() +
-  geom_vline(xintercept = 0) +
   scale_color_brewer(palette = "Set1") +
-  ylab("")
-
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  geom_abline(slope = 1, intercept = 0)
 ```
-write.csv(all_resp,"/Volumes/Seagate/wml/wml-wmpredictslearning-djm/learning-white-matter/allResp.csv", row.names = TRUE)
-write.csv(fa_wide_means,"/Volumes/Seagate/wml/wml-wmpredictslearning-djm/learning-white-matter/fa.csv", row.names = TRUE)
-write.csv(cis,"/Volumes/Seagate/wml/wml-wmpredictslearning-djm/learning-white-matter/lassofit_fa_predicts_acc.csv", row.names = TRUE)
-
