@@ -74,8 +74,9 @@ No transformation is needed. Log wouldn't help. Logit doesn't do much.
 Subject ID `r bad_outlier` should be removed.
 
 ```{r kill-outlier}
-fa_sub <- fa_sub %>% filter(subID != bad_outlier[1])
-fa_sub <- fa_sub %>% filter(subID != bad_outlier[2])
+fa_sub <- fa_sub %>% filter( ! subID %in% bad_outlier )
+#fa_sub <- fa_sub %>% filter(subID != bad_outlier[1])
+#fa_sub <- fa_sub %>% filter(subID != bad_outlier[2])
 fa_sub <- fa_sub %>% filter(subID != 25, subID != 31, subID != 32, subID != 42) # missing tracts
 fa_sub <- fa_sub %>% filter(subID != 60) # brain anomaly
 #fa_sub <- fa_sub %>% filter(subID != 26, subID != 50, subID != 56, subID != 60, subID != 64, subID != 89, subID != 95, subID != 97, subID != 98) # still processing on brainlife
@@ -202,7 +203,7 @@ ci_glmnet <- function(y) {
 }
 
 cis <- map_dfr(
-  as_tibble(y[,2:3]), ci_glmnet, .id = "response")
+  as_tibble(y[,3]), ci_glmnet, .id = "response") # column 2 = recog, column 3 = draw
 
 yy <- y[,"learn"][bad_obs < 4]
 mod <- glmnet(x, yy, relax = TRUE, gamma = 0)
