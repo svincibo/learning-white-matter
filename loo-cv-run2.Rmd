@@ -17,15 +17,12 @@ install.packages("tidyverse")
 install.packages("glmnet")
 install.packages("lme4")
 install.packages("remotes")
-install.packages("sparsegl")
-#remotes::install_github("dajmcdon/sparsegl")
-
+remotes::install_github("dajmcdon/sparsegl")
 ```
 
-```{r data-loading} 
+```{r data-loading}
 library(glmnet)
 library(tidyverse)
-library(readr)
 recog <- read_csv("wml_data_beh_recog_n60_20220607.csv")
 wr <- read_csv("wml_data_beh_write_n60_20220607.csv")
 #tracts <- read_csv("wml_data_mri_tractprofiles_n60_run1_20220609.csv")
@@ -77,7 +74,8 @@ Subject IDs `r bad_outlier` should be removed.
 missing_tracts <- c(25, 31, 32, 42)
 missing_run2 <- c(35, 53, 58)
 brain_anomaly <- c(60)
-remove_ids <- c(bad_outlier, missing_tracts, missing_run2, brain_anomaly)
+remove_ids <- c(bad_outlier, missing_tracts, brain_anomaly, missing_run2)
+
 
 fa_sub <- fa_sub %>% filter(! subID %in% remove_ids)
 fa_wide <- fa_wide %>% filter(! subID %in% remove_ids)
@@ -104,7 +102,6 @@ all_resp <- full_join(recog_resp, fits) %>%
 
 Yes. Due to cv. There are too few observations for 10 fold CV. We use leave one out.
 
-
 # Relaxed lasso on means for selected tracks (no grouping)
 
 ```{r}
@@ -114,7 +111,6 @@ x <- fa_wide_means %>%
   dplyr::select(-subID) %>% 
   as.matrix()
 ```
-
 
 ```{r, warning=FALSE}
 mod_acc <- cv.glmnet(x, y[,"acc"], relax = TRUE, gamma = 0, nfolds = nrow(x))
@@ -140,7 +136,6 @@ ggplot(mean_model_lasso, aes(value, var, color = name)) +
 
 Because $n > p$, technically, the OLS intervals are valid. This is the simplest thing to do. So let's just use those.
 
-
 ```{r glmnet-cis}
 lm_acc <- lm(acc ~. , bind_cols(acc = y[,"acc"], x))
 lm_learn <- lm(learn ~ ., bind_cols(learn = y[,"learn"] , x))
@@ -165,7 +160,6 @@ ggplot(mean_model_lasso, aes(y=var, color = var)) +
   scale_color_brewer(palette = "Dark2")
 ```
 
-
 ## See how well the regions for drawing (learning) predict accuracy
 
 ```{r}
@@ -174,7 +168,7 @@ predsacc <- predict(mod_acc, newx = x, s = "lambda.min")
 acc_model_with_draw_covariates <- 
   lm(acc ~ ., bind_cols(
     acc = y[,"acc"], 
-    x[, predict(mod_learn, s="lambda.min", type = "nonzero")$lambda.min, 
+    x[, predict(mod_learn, s="lambda.min", type = "nonzero")$lambda.min,
       drop=FALSE])) %>%
   predict(newx = x)
 
@@ -184,7 +178,7 @@ mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates)^2)
 perc_worse <- (mse2 / mse1 - 1) * 100 
 ```
 
-* I think the right way to do this is not to use _the estimated model_ from drawing to predict accuracy, but to use _the selected regions_ from the drawing model. Then we refit accuracy, using only those regions, but have new slope/intercepts. Otherwise, things are on the wrong scale. 
+-   I think the right way to do this is not to use *the estimated model* from drawing to predict accuracy, but to use *the selected regions* from the drawing model. Then we refit accuracy, using only those regions, but have new slope/intercepts. Otherwise, things are on the wrong scale.
 
 Doing this, the predictions using the drawing regions are about `r round(perc_worse)`% worse.
 
