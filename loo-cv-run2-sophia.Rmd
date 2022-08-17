@@ -160,7 +160,7 @@ acc_model_with_draw_covariates <-
     acc = y[,"acc"], 
     x[, predict(mod_learn, s="lambda.min", type = "nonzero")$lambda.min,
       drop=FALSE])) %>%
-  predict(newx = x)
+  predict()
 
 mse1 = mean((y[,"acc"] - predsacc)^2) # accuracy model for accuracy
 mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates)^2)
@@ -210,6 +210,77 @@ Doing this, the predictions using the accuracy regions are about `r round(perc_w
 bind_cols(draw = y[,"learn"], 
           `drawing model` = predslearn,
           `accuracy model` = learn_model_with_acc_covariates) %>%
+  pivot_longer(-draw, values_to = "predicted value") %>%
+  ggplot(aes(x = `predicted value`, y = draw)) + 
+  geom_point(aes(color = name, shape = name)) +
+  theme_bw() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  geom_abline(slope = 1, intercept = 0)
+```
+
+# Using OOS predictions
+
+```{r}
+predict_oos <- function(object, ...) {
+  h <- hatvalues(object)
+  yhat <- predict(object, ...)
+  e <- residuals(object)
+  yhat - (h*e) / (1-h)
+}
+```
+
+## OOS the regions for drawing (learning) predict accuracy
+
+
+```{r}
+learn_covariates <- predict(mod_learn, s = "lambda.min", 
+                            type = "nonzero")$lambda.min
+acc_covariates <- predict(mod_acc, s="lambda.min", 
+                          type = "nonzero")$lambda.min
+lm_learn <- lm(y[,"acc"] ~ x[,learn_covariates,drop=FALSE])
+lm_acc <- lm(y[,"acc"] ~ x[,acc_covariates,drop=FALSE])
+
+mse1 = mean((y[,"acc"] - predict_oos(lm_acc))^2) # accuracy model for accuracy
+mse2 = mean((y[,"acc"] - predict_oos(lm_learn))^2) # learn model for accuracy
+
+perc_worse <- (mse2 / mse1 - 1) * 100 
+```
+
+The OOS predictions using the drawing regions are about `r round(perc_worse)`% worse.
+
+```{r plt-preds-oos}
+bind_cols(accuracy = y[,"acc"], 
+          `drawing model` = predict_oos(lm_learn),
+          `accuracy model` = predict_oos(lm_acc)) %>%
+  pivot_longer(-accuracy, values_to = "predicted value") %>%
+  ggplot(aes(x = `predicted value`, y = accuracy)) + 
+  geom_point(aes(color = name, shape = name)) +
+  theme_bw() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  geom_abline(slope = 1, intercept = 0)
+```
+
+
+## See how well the regions for accuracy predict drawing (learning)
+
+```{r}
+lm_learn <- lm(y[,"learn"] ~ x[,learn_covariates,drop=FALSE])
+lm_acc <- lm(y[,"learn"] ~ x[,acc_covariates,drop=FALSE])
+
+mse1 = mean((y[,"learn"] - predict_oos(lm_learn))^2) # learn model for learning
+mse2 = mean((y[,"learn"] - predict_oos(lm_acc))^2) # accuracy model for learning
+
+perc_worse <- (mse2 / mse1 - 1) * 100 
+```
+
+The OOS predictions using the accuracy regions are about `r round(perc_worse)`% worse.
+
+```{r plt-preds-oos2}
+bind_cols(draw = y[,"learn"], 
+          `drawing model` = predict_oos(lm_learn),
+          `accuracy model` = predict_oos(lm_acc)) %>%
   pivot_longer(-draw, values_to = "predicted value") %>%
   ggplot(aes(x = `predicted value`, y = draw)) + 
   geom_point(aes(color = name, shape = name)) +
