@@ -1,7 +1,7 @@
 ---
-title: "LOO CV, More data"
+title: "LOO CV, Run1 (Sophia's version)"
 author: "DJM"
-date: "29/06/2022"
+date: "17 August 2022"
 output: 
   html_document:
     number_sections: true
@@ -20,12 +20,13 @@ install.packages("remotes")
 remotes::install_github("dajmcdon/sparsegl")
 ```
 
-```{r data-loading} 
+```{r data-loading}
 library(glmnet)
 library(tidyverse)
 recog <- read_csv("wml_data_beh_recog_n60_20220607.csv")
 wr <- read_csv("wml_data_beh_write_n60_20220607.csv")
-tracts <- read_csv("wml_data_mri_tractprofiles_n60_run1_20220609.csv")
+tracts <- read_csv("wml_data_mri_tractprofiles_n60_run1_20220816.csv")
+#tracts <- read_csv("wml_data_mri_tractprofiles_n59_run2_20220816.csv")
 
 # use fractional anisotropy
 fa <- tracts %>% dplyr::select(subID, tractname, nodeID, fa)
@@ -60,21 +61,19 @@ recog_resp <- recog %>%
             acc = mean(acc == 1, na.rm=TRUE))
 ```
 
-# Are there outliers?
-
 ```{r, fig.show='hold', out.width="45%"}
-plot(recog_resp$acc, recog_resp$rt)
+# plot(recog_resp$acc, recog_resp$rt)
 bad_outlier <- recog_resp$subID[recog_resp$acc <= .50]
 ```
 
 Subject IDs `r bad_outlier` should be removed.
 
 ```{r kill-outlier}
-missing_tracts <- c(25, 31, 32, 42)
-missing_run2 <- c(35, 53, 58)
+missing_tracts <- c(25, 31, 32, 42) 
+missing_run2 <- c(53) 
+bad_testretest <- c(46, 50, 54, 56)
 brain_anomaly <- c(60)
-remove_ids <- c(bad_outlier, missing_tracts, brain_anomaly, missing_run2)
-
+remove_ids <- c(bad_outlier, missing_tracts, brain_anomaly, missing_run2, bad_testretest)
 
 fa_sub <- fa_sub %>% filter(! subID %in% remove_ids)
 fa_wide <- fa_wide %>% filter(! subID %in% remove_ids)
@@ -97,11 +96,6 @@ all_resp <- full_join(recog_resp, fits) %>%
   filter()
 ```
 
-# Lasso changes when re-estimated?
-
-Yes. Due to cv. There are too few observations for 10 fold CV. We use leave one out.
-
-
 # Relaxed lasso on means for selected tracks (no grouping)
 
 ```{r}
@@ -111,7 +105,6 @@ x <- fa_wide_means %>%
   dplyr::select(-subID) %>% 
   as.matrix()
 ```
-
 
 ```{r, warning=FALSE}
 mod_acc <- cv.glmnet(x, y[,"acc"], relax = TRUE, gamma = 0, nfolds = nrow(x))
@@ -125,18 +118,13 @@ mean_model_lasso <- lapply(list(acc = mod_acc, learn = mod_learn),
   pivot_longer(-var) %>%
   filter(abs(value) > 0)
 
-ggplot(mean_model_lasso, aes(value, var, color = name)) +
-  geom_point() + 
-  theme_bw() +
-  geom_vline(xintercept = 0) +
-  scale_color_brewer(palette = "Set1") +
-  ylab("")
+plot(mod_acc)
+plot(mod_learn)
 ```
 
-### Confidence intervals for this fit.
+## Confidence intervals for this fit.
 
 Because $n > p$, technically, the OLS intervals are valid. This is the simplest thing to do. So let's just use those.
-
 
 ```{r glmnet-cis}
 lm_acc <- lm(acc ~. , bind_cols(acc = y[,"acc"], x))
@@ -159,9 +147,8 @@ ggplot(mean_model_lasso, aes(y=var, color = var)) +
   theme_bw() +
   geom_vline(xintercept = 0) +
   theme(legend.position = "none") +
-  scale_color_brewer(palette = "Dark2")
+  scale_color_viridis_d()
 ```
-
 
 ## See how well the regions for drawing (learning) predict accuracy
 
@@ -171,7 +158,7 @@ predsacc <- predict(mod_acc, newx = x, s = "lambda.min")
 acc_model_with_draw_covariates <- 
   lm(acc ~ ., bind_cols(
     acc = y[,"acc"], 
-    x[, predict(mod_learn, s="lambda.min", type = "nonzero")$lambda.min, 
+    x[, predict(mod_learn, s="lambda.min", type = "nonzero")$lambda.min,
       drop=FALSE])) %>%
   predict(newx = x)
 
@@ -181,8 +168,6 @@ mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates)^2)
 perc_worse <- (mse2 / mse1 - 1) * 100 
 ```
 
-* I think the right way to do this is not to use _the estimated model_ from drawing to predict accuracy, but to use _the selected regions_ from the drawing model. Then we refit accuracy, using only those regions, but have new slope/intercepts. Otherwise, things are on the wrong scale. 
-
 Doing this, the predictions using the drawing regions are about `r round(perc_worse)`% worse.
 
 ```{r plt-preds}
@@ -191,6 +176,39 @@ bind_cols(accuracy = y[,"acc"],
           `accuracy model` = predsacc) %>%
   pivot_longer(-accuracy, values_to = "predicted value") %>%
   ggplot(aes(x = `predicted value`, y = accuracy)) + 
+  geom_point(aes(color = name, shape = name)) +
+  theme_bw() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  geom_abline(slope = 1, intercept = 0)
+```
+
+## See how well the regions for accuracy predict drawing (learning)
+
+```{r}
+# predsdraw <- predict(mod_learn, newx = x, s = mod_learn$lambda.min)
+predslearn <- predict(mod_learn, newx = x, s = "lambda.min")
+learn_model_with_acc_covariates <- 
+  lm(learn ~ ., bind_cols(
+    learn = y[,"learn"], 
+    x[, predict(mod_acc, s="lambda.min", type = "nonzero")$lambda.min,
+      drop=FALSE])) %>%
+  predict(newx = x)
+
+mse1 = mean((y[,"learn"] - predslearn)^2) # accuracy, model for learn
+mse2 = mean((y[,"learn"] - learn_model_with_acc_covariates)^2)
+
+perc_worse <- (mse2 / mse1 - 1) * 100 
+```
+
+Doing this, the predictions using the accuracy regions are about `r round(perc_worse)`% worse.
+
+```{r plt-preds2}
+bind_cols(draw = y[,"learn"], 
+          `drawing model` = predslearn,
+          `accuracy model` = learn_model_with_acc_covariates) %>%
+  pivot_longer(-draw, values_to = "predicted value") %>%
+  ggplot(aes(x = `predicted value`, y = draw)) + 
   geom_point(aes(color = name, shape = name)) +
   theme_bw() +
   scale_color_brewer(palette = "Set1") +
