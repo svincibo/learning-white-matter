@@ -3,6 +3,8 @@
 
 (as in Vinci-Booher et al. "Microstructure of white matter tracts connecting perceptual and motor association cortices predict learning to draw novel symbols")
 
+* Note that MATLAB scripts for the rest of the manuscript are available in https://github.com/svincibo/wml-wmpredictslearning
+
 ## Software setup
 
 1. Download R: https://cran.r-project.org
