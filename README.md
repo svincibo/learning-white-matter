@@ -1,17 +1,29 @@
 
-# sophia-white-matter
+# Replication scripts for the Relaxed Lasso Analysis
 
-<!-- badges: start -->
-<!-- badges: end -->
+(as in Vinci-Booher et al. "Microstructure of white matter tracts connecting perceptual and motor association cortices predict learning to draw novel symbols")
 
+## Software setup
 
-* List installation steps.
-    1. Download R: https://cran.r-project.org
-    2. Download RStudio Desktop: https://www.rstudio.com/products/rstudio/
-    3. Install R then RStudio.
-    4. Launch RStudio. Choose File > New Project > Version Control > Git
-    5. Enter the repo: https://github.com/dajmcdon/learning-white-matter.git
-    6. Choose a location to save.
-    7. Install the packages using the chunk at the top of the .Rmd
+1. Download R: https://cran.r-project.org
+2. Download RStudio Desktop: https://www.rstudio.com/products/rstudio/
+3. Install R then RStudio.
+4. Launch RStudio. Choose File > New Project > Version Control > Git
+5. Paste the Clone link above in the "Repository URL" field.
+6. Choose a location to save.
+
+## Necessary packages
+
+The first Chunk in `relaxed-lasso-analysis.Rmd` file with `eval = FALSE` provides code to install necessary packages. 
+
+## Data files
+
+The 4 necessary data files can be downloaded from [OSF.io](https://osf.io/95zjk/files/osfstorage).
+
+They should be downloaded to the root of the project directory.
+
+## Knit the `relaxed-lasso-analysis.Rmd`
+
+Choosing the `tracts` parameter on line 7/8 toggles between the two MRI runs.
 
 
