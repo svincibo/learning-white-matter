@@ -15,6 +15,3 @@
     7. Install the packages using the chunk at the top of the .Rmd
 
 
-* Flip sign on learning. DONE
-
-* Group lasso / sparse group lasso on basis expansion. DONE (not great I don't think)
