@@ -1,14 +1,19 @@
 ---
-title: "LOO CV, More data"
-author: "DJM"
+title: "Relaxed Lasso Analysis"
+author: "DJ McDonald"
 date: "29/06/2022"
-output: 
-  html_document:
-    number_sections: true
+output: html_document
+params: 
+  tracts: "wml_data_mri_tractprofiles_n60_run1_20220816.csv" # run1
+  # tracts: "wml_data_mri_tractprofiles_n59_run2_20220816.csv" #run2
 ---
 
+# Setup and data processing
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE
+)
 ```
 
 ```{r, eval=FALSE, echo=TRUE}
@@ -17,7 +22,6 @@ install.packages("tidyverse")
 install.packages("glmnet")
 install.packages("lme4")
 install.packages("remotes")
-remotes::install_github("dajmcdon/sparsegl")
 ```
 
 ```{r data-loading}
@@ -25,8 +29,7 @@ library(glmnet)
 library(tidyverse)
 recog <- read_csv("wml_data_beh_recog_n60_20220607.csv")
 wr <- read_csv("wml_data_beh_write_n60_20220607.csv")
-#tracts <- read_csv("wml_data_mri_tractprofiles_n60_run1_20220816.csv")
-tracts <- read_csv("wml_data_mri_tractprofiles_n59_run2_20220816.csv")
+tracts <- read_csv(params$tracts)
 
 # use fractional anisotropy
 fa <- tracts %>% dplyr::select(subID, tractname, nodeID, fa)
@@ -57,52 +60,73 @@ fa_wide <- fa_sub %>%
 
 recog_resp <- recog %>%
   group_by(subID) %>%
-  summarise(rt = mean(RT[acc == 1], na.rm=TRUE),
-            acc = mean(acc == 1, na.rm=TRUE))
+  summarise(
+    rt = mean(RT[acc == 1], na.rm = TRUE),
+    acc = mean(acc == 1, na.rm = TRUE)
+  )
 ```
 
-# Are there outliers?
+# Remove some data 
+
+* Outliers
 
 ```{r, fig.show='hold', out.width="45%"}
 plot(recog_resp$acc, recog_resp$rt)
 bad_outlier <- recog_resp$subID[recog_resp$acc <= .50]
 ```
 
-Subject IDs `r bad_outlier` should be removed.
+* Some subjects that are missing retest data or other MRI processing issues.
 
 ```{r kill-outlier}
 missing_tracts <- c(25, 31, 32, 42) 
 missing_run2 <- c(53) 
 bad_testretest <- c(46, 50, 54, 56)
 brain_anomaly <- c(60)
-remove_ids <- c(bad_outlier, missing_tracts, brain_anomaly, missing_run2, bad_testretest)
+remove_ids <- c(
+  bad_outlier, 
+  missing_tracts, 
+  brain_anomaly, 
+  missing_run2, 
+  bad_testretest
+)
 
-fa_sub <- fa_sub %>% filter(! subID %in% remove_ids)
-fa_wide <- fa_wide %>% filter(! subID %in% remove_ids)
-fa_wide_means <- fa_wide_means %>% filter(! subID %in% remove_ids)
-recog_resp <- recog_resp %>% filter(! subID %in% remove_ids)
-wr <- wr %>% filter(! subID %in% remove_ids)
+fa_sub <- fa_sub %>% 
+  filter(!subID %in% remove_ids)
+fa_wide <- fa_wide %>% 
+  filter(!subID %in% remove_ids)
+fa_wide_means <- fa_wide_means %>% 
+  filter(!subID %in% remove_ids)
+recog_resp <- recog_resp %>% 
+  filter(!subID %in% remove_ids)
+wr <- wr %>% 
+  filter(!subID %in% remove_ids)
+```
 
-# grab the slopes
+
+# Calculate the response slopes
+
+```{r response}
 fits <- wr %>%
   group_by(subID) %>%
   group_modify( ~ {
-    as.data.frame(summary(
-      lme4::lmer(drawduration ~ block + (1 | stimulus), data=.x)
-    )$coefficients[2,,drop=FALSE])
+    as.data.frame(
+      summary(
+        lme4::lmer(
+          formula = drawduration ~ block + (1 | stimulus), 
+          data = .x
+        )
+      )$coefficients[2, , drop = FALSE]
+    )
   })
+
 all_resp <- full_join(recog_resp, fits) %>%
   dplyr::select(subID, rt, acc, Estimate) %>%
   rename(learn = Estimate) %>%
-  mutate(learn = -learn) %>%
-  filter()
+  mutate(learn = -learn)
 ```
 
-# Lasso changes when re-estimated?
 
-Yes. Due to cv. There are too few observations for 10 fold CV. We use leave one out.
-
-# Relaxed lasso on means for selected tracks (no grouping)
+# Relaxed lasso on means for selected tracks
 
 ```{r}
 y <- as.matrix(all_resp %>% dplyr::select(-subID))
@@ -113,11 +137,18 @@ x <- fa_wide_means %>%
 ```
 
 ```{r, warning=FALSE}
-mod_acc <- cv.glmnet(x, y[,"acc"], relax = TRUE, gamma = 0, nfolds = nrow(x))
-mod_learn <- cv.glmnet(x, y[,"learn"], relax = TRUE, gamma = 0, nfolds = nrow(x))
+mod_acc <- cv.glmnet(
+  x, y[ ,"acc"], 
+  relax = TRUE, gamma = 0, nfolds = nrow(x) # LOOCV
+)
+mod_learn <- cv.glmnet(
+  x, y[ ,"learn"], 
+  relax = TRUE, gamma = 0, nfolds = nrow(x)
+)
 
-mean_model_lasso <- lapply(list(acc = mod_acc, learn = mod_learn),
-                           coef, s = "lambda.min") %>%
+mean_model_lasso <- lapply(
+  list(acc = mod_acc, learn = mod_learn), 
+  coef, s = "lambda.min") %>%
   lapply(as.vector) %>%
   bind_cols() %>%
   mutate(var = c("(Intercept)", colnames(x))) %>%
@@ -132,28 +163,34 @@ ggplot(mean_model_lasso, aes(value, var, color = name)) +
   ylab("")
 ```
 
-### Confidence intervals for this fit.
+## Confidence intervals for this fit.
 
-Because $n > p$, technically, the OLS intervals are valid. This is the simplest thing to do. So let's just use those.
+Because $n > p$, technically, the OLS intervals are valid.
 
 ```{r glmnet-cis}
-lm_acc <- lm(acc ~. , bind_cols(acc = y[,"acc"], x))
-lm_learn <- lm(learn ~ ., bind_cols(learn = y[,"learn"] , x))
+lm_acc <- lm(acc ~ . , bind_cols(acc = y[ ,"acc"], x))
+lm_learn <- lm(learn ~ ., bind_cols(learn = y[ ,"learn"] , x))
 
 mean_model_lasso <- left_join(
   mean_model_lasso,
-  bind_rows(as_tibble(confint(lm_acc)) %>% 
-              mutate(name = "acc", var = names(coef(lm_acc))),
-            as_tibble(confint(lm_learn)) %>% 
-              mutate(name = "learn", var = names(coef(lm_learn))))
+  bind_rows(
+    as_tibble(confint(lm_acc)) %>% 
+      mutate(name = "acc", var = names(coef(lm_acc))),
+    as_tibble(confint(lm_learn)) %>% 
+      mutate(name = "learn", var = names(coef(lm_learn)))
   )
+)
 
-better_labels = c(acc = "Recognition Accuracy", learn = "Drawing Duration")
+better_labels = c(
+  acc = "Recognition Accuracy", 
+  learn = "Drawing Duration"
+)
   
-ggplot(mean_model_lasso, aes(y=var, color = var)) +
-  geom_point(aes(x=value)) +
+ggplot(mean_model_lasso, aes(y = var, color = var)) +
+  geom_point(aes(x = value)) +
   geom_errorbar(aes(xmin = `2.5 %`, xmax = `97.5 %`)) +
-  facet_wrap(~ name, scales = "free", labeller = labeller(name = better_labels)) +
+  facet_wrap(~ name, scales = "free", 
+             labeller = labeller(name = better_labels)) +
   theme_bw() +
   geom_vline(xintercept = 0) +
   theme(legend.position = "none") +
@@ -161,6 +198,9 @@ ggplot(mean_model_lasso, aes(y=var, color = var)) +
 ```
 
 ## See how well the regions for drawing (learning) predict accuracy
+
+I think the right way to do this is not to use *the estimated model* from drawing to predict accuracy, but to use *the selected regions* from the drawing model. Then we refit accuracy, using only those regions, but have new slope/intercepts. Otherwise, things are on the wrong scale.
+
 
 ```{r}
 # predsdraw <- predict(mod_learn, newx = x, s = mod_learn$lambda.min)
@@ -178,7 +218,6 @@ mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates)^2)
 perc_worse <- (mse2 / mse1 - 1) * 100 
 ```
 
--   I think the right way to do this is not to use *the estimated model* from drawing to predict accuracy, but to use *the selected regions* from the drawing model. Then we refit accuracy, using only those regions, but have new slope/intercepts. Otherwise, things are on the wrong scale.
 
 Doing this, the predictions using the drawing regions are about `r round(perc_worse)`% worse.
 
@@ -191,6 +230,7 @@ bind_cols(accuracy = y[,"acc"],
   geom_point(aes(color = name, shape = name)) +
   theme_bw() +
   scale_color_brewer(palette = "Set1") +
-  theme(legend.position = "bottom", legend.title = element_blank()) +
+  theme(legend.position = "bottom", 
+        legend.title = element_blank()) +
   geom_abline(slope = 1, intercept = 0)
 ```
