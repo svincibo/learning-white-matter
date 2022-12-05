@@ -4,8 +4,8 @@ author: "DJ McDonald"
 date: "29/06/2022"
 output: html_document
 params: 
-  #tracts: "wml_data_mri_tractprofiles_n60_run1_20220816.csv" # run1
-  tracts: "wml_data_mri_tractprofiles_n59_run2_20220816.csv" #run2
+  tracts: "wml_data_mri_tractprofiles_n60_run1_20220816.csv" # run1
+ #tracts: "wml_data_mri_tractprofiles_n59_run2_20220816.csv" #run2
 ---
 
 # Setup and data processing: Run `r stringr::str_extract(params$tracts, "(?<=run).")`
@@ -41,6 +41,7 @@ fa_sub <- fa %>%
       str_detect(tractname, "Arc") |
       str_detect(tractname, "IFOF") |
       str_detect(tractname, "ILF") 
+    
   ) %>%
   mutate(gr = case_when(
     str_detect(tractname, "SLF") ~ "Dorsal",
