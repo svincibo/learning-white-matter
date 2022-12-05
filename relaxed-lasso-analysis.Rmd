@@ -4,11 +4,11 @@ author: "DJ McDonald"
 date: "29/06/2022"
 output: html_document
 params: 
-  # tracts: "wml_data_mri_tractprofiles_n60_run1_20220816.csv" # run1
+  #tracts: "wml_data_mri_tractprofiles_n60_run1_20220816.csv" # run1
   tracts: "wml_data_mri_tractprofiles_n59_run2_20220816.csv" #run2
 ---
 
-# Setup and data processing
+# Setup and data processing: Run `r stringr::str_extract(params$tracts, "(?<=run).")`
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
@@ -38,7 +38,7 @@ fa_sub <- fa %>%
     str_detect(tractname, "SLF") |
       str_detect(tractname, "MDLF") |
       str_detect(tractname, "TPC") |
-      str_detect(tractname, "pArc") |
+      str_detect(tractname, "Arc") |
       str_detect(tractname, "IFOF") |
       str_detect(tractname, "ILF") 
   ) %>%
@@ -209,11 +209,11 @@ acc_model_with_draw_covariates <-
   lm(acc ~ ., bind_cols(
     acc = y[,"acc"], 
     x[, predict(mod_learn, s="lambda.min", type = "nonzero")$lambda.min,
-      drop=FALSE])) %>%
-  predict(newx = x)
+      drop=FALSE]))
+acc_model_with_draw_covariates_predictions <- predict(acc_model_with_draw_covariates)
 
 mse1 = mean((y[,"acc"] - predsacc)^2) # accuracy model for accuracy
-mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates)^2)
+mse2 = mean((y[,"acc"] - acc_model_with_draw_covariates_predictions)^2)
 
 perc_worse <- (mse2 / mse1 - 1) * 100 
 ```
@@ -223,7 +223,7 @@ Doing this, the predictions using the drawing regions are about `r round(perc_wo
 
 ```{r plt-preds}
 bind_cols(accuracy = y[,"acc"], 
-          `drawing model` = acc_model_with_draw_covariates,
+          `drawing model` = acc_model_with_draw_covariates_predictions,
           `accuracy model` = predsacc) %>%
   pivot_longer(-accuracy, values_to = "predicted value") %>%
   ggplot(aes(x = `predicted value`, y = accuracy)) + 
@@ -233,4 +233,65 @@ bind_cols(accuracy = y[,"acc"],
   theme(legend.position = "bottom", 
         legend.title = element_blank()) +
   geom_abline(slope = 1, intercept = 0)
+```
+
+```{r tab1-fun, echo=FALSE}
+tab1_fun <- function(name, yvar, lasso_mod, lm_mod) {
+  mse <- function(a, b) mean((a - b)^2)
+  n <- length(y[,yvar])
+  b1 = coef(lasso_mod, s = "lambda.min")
+  plasso <- predict(lasso_mod, newx = x, s = "lambda.min")
+  nz <- which(abs(b1) > 0)[-1]
+  ses = summary(lm_mod)$coefficients[nz, 2]
+  R2 = 1 - mse(y[,yvar], plasso) / (var(y[,yvar]) * (n - 1) / n)
+  AdjR2 = 1 - (1 - R2) * (n - 1) / (n - sum(abs(b1) > 0))
+  # browser()
+  mat = cbind(b1[nz], ses, c(R2, rep(NA, length(nz)-1)), c(AdjR2, rep(NA, length(nz)-1)))
+  colnames(mat) <- c("beta_hat", "S.E.", "R2", "Adj R2")
+  rownames(mat) <- rownames(b1)[nz]
+  cat("\n", name, "\n\n")
+  print(mat)
+  cat("\n")
+  invisible(mat)
+}
+```
+
+```{r acc-model-table, echo=FALSE}
+summary(acc_model_with_draw_covariates)
+```
+
+## Table 1
+
+
+
+```{r, echo=FALSE}
+tab1_fun("Drawing learning", "learn", mod_learn, lm_learn)
+tab1_fun("Visual recognition learning", "acc", mod_acc, lm_acc)
+```
+
+## J-test and Cox test to compare non-nested models
+
+Reference: 
+
+Davidson, R., & MacKinnon, J. G. (1981). SEVERAL TESTS FOR MODEL SPECIFICATION IN THE PRESENCE OF ALTERNATIVE HYPOTHESES. Econometrica (Pre-1986), 49(3), 781.
+
+```{r jtest}
+library(lmtest)
+jdata <- as.data.frame(cbind(acc = y[, "acc"], x))
+learn_vars <- which(abs(coef(mod_learn, s="lambda.min"))[-1,] > 0)
+acc_vars <- which(abs(coef(mod_acc, s="lambda.min"))[-1,] > 0)
+lform_learn <- as.formula(
+  paste("acc ~", paste(colnames(x)[learn_vars], collapse = " + "))
+)
+lform_acc <- as.formula(
+  paste("acc ~", paste(colnames(x)[acc_vars], collapse = " + "))
+)
+jtest(lform_acc, lform_learn, data = jdata)
+coxtest(lform_acc, lform_learn, data = jdata)
+```
+
+### Estimated model summary for using the learn regions to predict accuracy
+
+```{r wrong-model-summary}
+summary(lm(lform_learn, data = jdata))
 ```
